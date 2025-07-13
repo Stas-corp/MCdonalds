@@ -1,29 +1,39 @@
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 class BrowserClient:
     def __init__(self):
-        self.playwright = sync_playwright().start()
-        self.browser = self.playwright.webkit.launch(headless=True)
+        self.playwright = None
+        self.browser = None
 
-    def get_page_html(
+
+    async def start(self):
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.webkit.launch(headless=True)
+
+
+    async def get_page_html(
         self, 
         url: str, 
         click_selector: str = None, 
         wait_selector: str = None
     ) -> str:
-        page = self.browser.new_page()
+        context = await self.browser.new_context()
+        page = await context.new_page()
         try:
-            page.goto(url)
+            await page.goto(url)
             if click_selector:
-                page.click(click_selector)
+                await page.click(click_selector)
             if wait_selector:
-                page.wait_for_selector(wait_selector)
-            return page.content()
-        except:
-            raise ValueError("Playwright error")
+                await page.wait_for_selector(wait_selector)
+            return await page.content()
+        except Exception as e:
+            raise ValueError(f"Playwright error: \n {e}")
         finally:
-            page.close()
+            await context.close()
 
-    def close(self):
-        self.browser.close()
-        self.playwright.stop()
+
+    async def close(self):
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()

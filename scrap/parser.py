@@ -1,3 +1,4 @@
+import asyncio
 import json
 # import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -11,14 +12,14 @@ from playwright_parser import BrowserClient
 
 DOMAIN = 'https://www.mcdonalds.com'
 MENU = '/ua/uk-ua/eat/fullmenu.html'
-# with open('index.html', 'w', encoding='utf-8') as file:
-#     file.write(response.text)
+
+sem = asyncio.Semaphore(5)
 
 def get_response(url: str):
     headers = Headers('chrome', 'win', headers=True).generate()
     response = requests.get(url, headers=headers)
     if response.status_code >= 400:
-        print('Response was returned with a status of 400 or more.')
+        print('Response was returned with a status 400 or more.')
         return False
     else:
         # with open('index.html', 'w', encoding='utf-8') as file:
@@ -26,10 +27,10 @@ def get_response(url: str):
         return response.text
 
 
-def get_item_data(url: str):
+async def get_item_data(url: str):
     browser = BrowserClient()
-    
-    html = browser.get_page_html(
+    await browser.start()
+    html = await browser.get_page_html(
         url,
         click_selector="#accordion-29309a7a60-item-9ea8a10642-button",
         wait_selector="#accordion-29309a7a60-item-9ea8a10642-panel"
@@ -40,7 +41,7 @@ def get_item_data(url: str):
         raise ValueError("Parser error")
     # print(url, 'OK')
     
-    # pimary_item = soup.find_all('li', class_ = 'cmp-nutrition-summary__heading-primary-item')
+    pimary_item = soup.find_all('li', class_ = 'cmp-nutrition-summary__heading-primary-item')
     # second_item = soup.find('div', class_ = 'cmp-nutrition-summary__details-column-view-desktop')
     
     data = {
@@ -53,10 +54,15 @@ def get_item_data(url: str):
     # panel = soup.find(id=panel_id)
     
     print(data)
-    browser.close()
+    await browser.close()
 
 
-def main():
+async def limit_get_item_data(url: str):
+    async with sem:
+        return await get_item_data(url)
+
+
+async def main():
     try:
         soup = BeautifulSoup(get_response(DOMAIN + MENU), 'lxml')
     except:
@@ -69,15 +75,19 @@ def main():
         item: BeautifulSoup
         urls.append(DOMAIN + item.find('a').get('href'))
     
-    with ThreadPoolExecutor(max_workers=5) as executer:
-        executer.map(get_item_data, urls)
-    # get_item_data(urls[0], browser)
-    
+    tasks = [limit_get_item_data(url) for url in urls]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for url, result in zip(urls, results):
+        if isinstance(result, Exception):
+            print(f"Ошибка при обработке {url}: {result}")
+        else:
+            print(f"{url} → OK")
 
 
 if __name__ == "__main__":
     from time import time
     start = time()
-    main()
+    asyncio.run(main())
     end = time()
     print('Program worked: ', end - start)
